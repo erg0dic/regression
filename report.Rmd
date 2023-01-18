@@ -1,0 +1,210 @@
+---
+title: "Data Analysis project 2"
+author: "Irtaza Khalid"
+date: "10/10/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+dat = read.table("http://stat.cmu.edu/~larry/=stat401/PlantData.txt")
+library(knitr)
+cols <- ncol(dat)
+data.summary <- data.frame(Min = sapply(X=1:cols, FUN=function(X) min(dat[,X])), 
+                           Max = sapply(X=1:cols, FUN=function(X) max(dat[,X])),
+                           Mean = sapply(X=1:cols, FUN=function(X) mean(dat[,X])),
+                           Median = sapply(X=1:cols, FUN=function(X) median(dat[,X])),
+                           Variance = sapply(X=1:cols, FUN=function(X) var(dat[,X]))
+                           )
+                           
+row.names(data.summary) <- c(names(dat))
+```
+
+
+## Introduction
+
+The goal of this project is to build an elementary predictive model of the number of native plant species (`NR`) using the covariates in the dataset `PlantData.txt` . There are a few hypotheses that will also be tested along the way of our final model construction including testing top covariates in terms of model prediction contribution: the covariates are: Area in hectares, [Latitude], [Elev]ation above sea level (in meters), number of [Soi]l types, [Years] since isolation, Years since deglaciation [Deglac], and human population count [Human.pop] - here [] encapsulates the covariate names in the dataset; the top covariates are hypothesized to be Area, Elevation and Soil types. Another hypothesis is that the log transform of each covariate should yield a better model.
+
+(*Aside*: link to get the dataset is <http://stat.cmu.edu/~larry/=stat401/PlantData.txt>)
+
+## EDA
+
+Table 1 shows some summary statistics for the Plant data. Note in particular that `Area`, `Human.pop`, `Elev` and `Years` have a lot of variance (about $\Theta(10^3)$ greater than the maximum values). For example `Elev` values span two orders of magnitude with a range ~6-400; `Area` spans 3 orders of magnitude and `Human.pop` spans 5 orders of magnitude. For the former 2, a log transform makes sense to reduce the within-distribution variance. 
+
+```{r data.summary, echo=FALSE}
+kable(data.summary, row.names=TRUE, digits=4, caption="Summary statistics for Plant species Data set")
+```
+
+We next look at a pairwise scatter plot of all variables with the response variable `NR` in figure 1. Most of the covariates are uncorrelated with each other from as seen from Figure 1 but they do show correlation with the response variate `NR`. 
+```{r dat, echo=FALSE, fig.cap="Pairwise scatter plot of the Plant species data", out.width="100%"}
+pairs(dat)
+```
+
+In Figure 2, we show the histograms of the covariates and the response. We can see that `NR` has a marginal distribution that looks somewhat close to normal whereas the rest of the covariates are more or less uniformly margninally distributed. We can also see that about 70% of the `Human.pop` data are 0 which might motivate us to use that as a binary indicator in our predictive model.
+
+```{r ggplot2, echo=FALSE, fig.cap="Univariate histograms of all the variables with 30 bins. A spline for NR is shown to visualize the distributional shape.", out.width="33%", fig.show='hold'}
+hist(dat[,1], xlab="", main=c(names(dat))[1], breaks=30, 
+     probability = TRUE)
+dens <- density(dat$NR, bw = 1.2)
+lines(x = dens$x, y = dens$y, col = "seagreen", lwd = 3)
+for (i in 2:ncol(dat)) {
+  hist(dat[,i], xlab="", main=c(names(dat))[i], breaks=30)
+}
+```
+
+A log transform of the covariates should cluster large values in the same bins and the small values should be relatively unaffected. This could yield a better one-sided normal approximation.
+
+
+## Modeling
+We will look at two models of the form:
+$$\hat{\rm{NR}}^{(1)}=\hat{\beta_0}+\hat{\beta_1} \rm{Soil}+ \hat{\beta_2} \rm{Area}+
+\hat{\beta_3} \rm{Elev}+\hat{\beta_4} \rm{Years}+\hat{\beta_5}\rm{Deglac}+\hat{\beta_6} \rm{Human.pop}$$
+where $\hat{\rm{NR}}^{(1)}$ is the first model response as a function of all covariates and $\hat{\beta}_i$ are the fitted coefficients. There are some variables here whose contribution to the final response is questionable and a leaner model is conjectured by experts to carry most of the information. We will now state this model formally,
+
+$$\hat{\rm{NR}}^{(2)}=\hat{\beta_0}+\hat{\beta_1} \rm{Soil}+ \hat{\beta_2} \rm{Area}+
+\hat{\beta_3} \rm{Elev}$$
+```{r reganal2, echo=FALSE, fig.cap="Multi-linear regression models in ascending order of NR(i). Middle figure displays fitted values in red and the regression hyperplane is estimated using spline-smoothing.", out.width="33%", fig.show='hold'}
+library(glue)
+nlm1 <- lm(NR~Area+Latitude+Elev+Dist+Soil+Years+Deglac+Human.pop, data= dat)
+loghumanpop = log(dat$Human.pop+1)
+nlm2 <- lm(NR~log(Area)+log(Latitude)+log(Elev)+log(Dist)+log(Soil)+log(Years)+log(Deglac)+loghumanpop, data=dat)
+nlm3 <- lm(NR~Area+Elev+Soil, data = dat)
+nlm4 <- lm(NR~log(Area)+log(Elev)+log(Soil), data = dat)
+i=1
+plot(residuals(nlm1)~fitted(nlm1), main=glue('lm {i}'), xlab="Fitted", ylab="Residuals")
+panel.smooth(fitted(nlm1), residuals(nlm1))
+abline(h=0, lty=2)
+plot(dat$NR~dat$Area, main=glue('lm {i}'), xlab="Area", ylab="Fitted")
+points(fitted(nlm1)~dat$Area, col="red")
+panel.smooth(dat$Area, fitted(nlm1), col="red", cex=0.5)
+plot(nlm1, which=2)
+i=i+1
+plot(residuals(nlm2)~fitted(nlm2), main=glue('lm {i}'), xlab="Fitted", ylab="Residuals")
+panel.smooth(fitted(nlm2), residuals(nlm2))
+abline(h=0, lty=2)
+plot(dat$NR~log(dat$Area), main=glue('lm {i}'), xlab="log(Area)", ylab="Fitted")
+points(fitted(nlm2)~log(dat$Area), col="red")
+panel.smooth(log(dat$Area), fitted(nlm2), col="red", cex=0.5)
+plot(nlm2, which=2)
+i=i+1
+plot(residuals(nlm3)~fitted(nlm3), main=glue('lm {i}'), xlab="Fitted", ylab="Residuals")
+panel.smooth(fitted(nlm3), residuals(nlm3))
+abline(h=0, lty=2)
+plot(dat$NR~dat$Area, main=glue('lm {i}'), xlab="Area", ylab="Fitted")
+points(fitted(nlm3)~dat$Area, col="red")
+panel.smooth(dat$Area, fitted(nlm3), col="red", cex=0.5)
+plot(nlm3, which=2)
+i=i+1
+plot(residuals(nlm4)~fitted(nlm4), main=glue('lm {i}'), xlab="Fitted", ylab="Residuals")
+panel.smooth(fitted(nlm4), residuals(nlm4))
+abline(h=0, lty=2)
+plot(dat$NR~log(dat$Area), main=glue('lm {i}'), xlab="log(Area)", ylab="Fitted")
+points(fitted(nlm4)~log(dat$Area), col="red")
+panel.smooth(log(dat$Area), fitted(nlm4), col="red", cex=0.5)
+plot(nlm4, which=2, caption="")
+i=i+1
+```
+We will also consider logged versions of the covariates in the RHS for both and represent them as $\hat{\rm{NR}}^{(3)}$ and $\hat{\rm{NR}}^{(4)}$ respectively.
+
+We plot some basic sanity checks of the aforementioned models in figure 3. Notice that the Q-Q plots get more normalized when considering logged covariates and that there isn't much difference between the plots with the hypothesized top covariates mentioned in the introduction and all covariate plots. This is fact is true for both the logged and the unlogged covariate cases. We will perform some residual analysis on the models. Note also the points 104, 136, 137 that are flagged as far-from-distribution on the Q-Q plots for the logged covariates. The logged covariates also generate smaller residuals that are more evenly spaced around the horizontal line at 0. We also show the estimators for $\rm{NR}^{(1)}$ and its logged-covariates' version $\rm{NR}^{(2)}$ in Tables 2 and 3 respectively.  
+```{r regtable, echo=FALSE, out.width="33%", fig.show='hold'}
+kable(summary(nlm1)$coefficients, digits=4, caption="Preliminary diagnostics of unlogged lm 1")
+kable(summary(nlm2)$coefficients, digits=4, caption="Preliminary diagnostics of logged lm 2")
+```
+Note that there are a few variables that are flagged as insignificant at the $p<0.05$ level excluding the hypothesized top covariates. Also note that logging has significantly improved the t values for `Area`, `Elev` and `Soil`.
+All models display homoskedastic residuals and so there isn't too much of a concern about whether noise in the linear model isn't i.i.d.
+## Diagnostics and model selection
+Let us look at the $R^2$ values of the 4 models, we see that the logged models seem to be diagnosed as better fits also evidenced from their larger $t$ values. This is additional evidence to the Q-Q plots and the projected residual plots in figure 3.
+```{r, echo=FALSE}
+vals <- c(summary(nlm1)$r.squared, summary(nlm2)$r.squared, summary(nlm3)$r.squared, summary(nlm4)$r.squared)
+kable(vals, row.names=TRUE, caption="R-squared vals", digits=4)
+```
+Variable reduction seems to make sense, in light of Table 2,3,4 and figure 3 but further reduction was also explored and no pair of among the top 3 covariates was able to match the diagnostic thresholds of model 3  and 4. Note that logging the covariates has made sense on the diagnostic and numerical level but logging itself is a concave squashing operation as evidenced by middle column of figure 3 so we are acknowledging or rather assuming that the covariate effects at higher magnitudes are less important.   
+
+We will next focus on outlier detection and removal to possibly improve models 3 and 4 a bit more. We start by looking at standardized residuals, influence values and cook's distances of the four models shown above.
+
+```{r reganal3, echo=FALSE, fig.cap="Outlier/influence diagnostics", out.width="33%", fig.show='hold'}
+plot(rstudent(nlm1), main=glue("Model 1"), ylab="Standardized residuals")
+plot(hatvalues(nlm1), main=glue("Model 1"), ylab="Influence")
+plot(cooks.distance(nlm1), main=glue("Model 1"), ylab="Cook's distance")
+plot(rstudent(nlm2), main=glue("Model 2"), ylab="Standardized residuals")
+plot(hatvalues(nlm2), main=glue("Model 2"), ylab="Influence")
+plot(cooks.distance(nlm2), main=glue("Model 2"), ylab="Cook's distance")
+plot(rstudent(nlm3), main=glue("Model 3"), ylab="Standardized residuals")
+plot(hatvalues(nlm3), main=glue("Model 3"), ylab="Influence")
+plot(cooks.distance(nlm3), main=glue("Model 3"), ylab="Cook's distance")
+plot(rstudent(nlm4), main=glue("Model 4"), ylab="Standardized residuals")
+plot(hatvalues(nlm4), main=glue("Model 4"), ylab="Influence")
+plot(cooks.distance(nlm4), main=glue("Model 4"), ylab="Cook's distance")
+```
+Points 104, 136 and 137 are (most clearly discernible from the logged models 2, 4)  to have smaller influence values compared to standardized residuals and have cook's distances > 0.06 in all models. However, I don't see any natural reason to remove these points other than the fact that the model fitting will improve as analyzing rows 104, 136 and 137 individually does not reveal any glaring abnormalities. The reason to keep the log transformed models has been mentioned in the earlier section. A partial F test will be performed for all 4 models in a pairwise fashion. We will first consider the effects of additional variables in model 1 compared to model 3 (we have also fit models step-wise and checked to see that the null hypothesis in the partial $F$-test is not rejected at $p<0.6$ ),
+```{r, echo=FALSE}
+kable(anova(nlm1, nlm3), caption="Analysis of variance table between model 1 and model 3", digits=4)
+```
+
+All together we see that the null hypothesis for the additional variables is retained at a significance level of 0.28. The residual sum of squares (RSS) for the leaner model 3 are also bigger than that of model 1. Are we sure that the coefficients for additional variables are not important i.e. not significantly different from zero? We need to have low variance in their estimations and this can be seen from table 2 in the small values of the standard errors of their coefficients. We will therefore only look at the top 3 covariates' models 3 and 4 as the final models and evaluate their goodness in the proceeding section. 
+
+## Final Models
+To compare models 3 and 4 before presenting the final model, I looked at LOOCV scores and K-fold cross validation scores to understand compare MSE prediction error values. The results are shown in table 6. Note that model 4 uses logged covariates so the error decrease could be explainable by the log transform. Again the assumption of performing a log transform is strongly motivated given the fact that the data are spanning multiple orders of magnitudes in these parameters. All 3 covariates need to be log transformed to see appreciable gains in generalization error measures shown in table 6. Model comparisons from the Q-Q plots also indicate that logging has normalized the residuals.
+```{r loocv, echo=FALSE}
+loocv <- function(nlm, dat) {
+  return(mean(((dat$NR-fitted(nlm))/(1-hatvalues(nlm)))^2))
+}
+loocv_data <- c(loocv(nlm3, dat), loocv(nlm4, dat))
+library(boot)
+dat2 = dat
+dat2$Area = log(dat2$Area)
+dat2$Soil = log(dat2$Soil)
+dat2$Elev = log(dat2$Elev)
+nlm4_ <- glm(NR~Area+Soil+Elev, data=dat2)
+nlm3_ <- glm(NR~Area+Soil+Elev, data=dat)
+cvr4_ <- cv.glm(dat2, nlm4_, K=10)
+cvr3_ <- cv.glm(dat, nlm3_, K=10)
+kfold_data <- c(cvr3_$delta[1], cvr4_$delta[1])
+cvr4_2 <- cv.glm(dat2, nlm4_, K=5)
+cvr3_2 <- cv.glm(dat, nlm3_, K=5)
+kfold_data2 <- c(cvr3_2$delta[1], cvr4_2$delta[1])
+cvr4_3 <- cv.glm(dat2, nlm4_, K=20)
+cvr3_3 <- cv.glm(dat, nlm3_, K=20)
+kfold_data3 <- c(cvr3_3$delta[1], cvr4_3$delta[1])
+loocv_names <- c("model 3", "model 4")
+loocv_frame <- data.frame(loocv_names, loocv_data ,kfold_data3, kfold_data, kfold_data2)
+colnames(loocv_frame) <- c("Model", "LOOCV", "20-fold", "10-Fold", "5-fold")
+kable(loocv_frame, caption="Cross validation results", digits=4)
+```
+We will now present the estimated paramters with 95% confidence rectangle for model 4 which is our final selected model. The p-values are less than $\Theta(10^{-16})$ for the $t$-test for all coefficients and the standard error is 1.09; hence, our model covariates exhibit a reasonable relationship with the response `NR`.
+```{r final2, echo=FALSE}
+kable(confint(nlm4, level=1-0.05/4), caption="95% confidence intervals for all coefficients", digits=4)
+```
+
+```{r final, echo=FALSE, fig.cap="Residuals for final model for all covariates. Point 104 is the outlier in these plots however we found no adequate reason to remove it from the training data.", fig.show='hold', out.width="33%"}
+plot(y=residuals(nlm4), x=log(dat$Area), xlab="log(Area)", ylab="Residuals")
+abline(h=0, lty=2)
+panel.smooth(y=residuals(nlm4), x=log(dat$Area), cex=0.5)
+plot(y=residuals(nlm4), x=log(dat$Elev), xlab="log(Elev)",ylab="Residuals", )
+abline(h=0, lty=2)
+panel.smooth(y=residuals(nlm4), x=log(dat$Elev), cex=0.5)
+plot(y=residuals(nlm4), x=log(dat$Soil), xlab="log(Soil)", ylab="Residuals")
+abline(h=0, lty=2)
+panel.smooth(y=residuals(nlm4), x=log(dat$Soil), cex=0.5)
+# remove outlier as well
+# dat2[104,] <- NA
+# dat2 <- na.omit(dat2)
+# nlm_ <- lm(NR~Area+Soil+Elev, data=dat2)
+# plot(y=residuals(nlm_), x=dat2$Area, xlab="log(Area)", ylab="Residuals", main="Without point 104")
+# abline(h=0, lty=2)
+# panel.smooth(y=residuals(nlm_), x=dat2$Area, cex=0.5)
+# plot(y=residuals(nlm_), x=dat2$Elev, xlab="log(Elev)",ylab="Residuals", main="Without point 104")
+# abline(h=0, lty=2)
+# panel.smooth(y=residuals(nlm_), x=dat2$Elev, cex=0.5)
+# plot(y=residuals(nlm_), x=dat2$Soil, xlab="log(Soil)",ylab="Residuals", main="Without point 104")
+# abline(h=0, lty=2)
+# panel.smooth(y=residuals(nlm_), x=dat2$Soil, cex=0.5)
+```
+**Interpretation**: We can interpret the coefficients in table 7 in the following manner. At `Area`=0, `Elev`=0 and `Soil`=0, our intercept does not make sense, although for our analysis we have argued that log(0)=0 for the covariates. Once we have non-zero values, we can ask what the NR for a covariate point (256, 400, 76). Our model gives us a value of  $254.3227 \in (252.0167, 256.6287)$ at the 95% confidence level and a 99% interval being $(251.276,257.3694)$ with the average NR being 254.3227 for this covariate point. Any plant species found at this covariate point will have an NR value that will lie in either interval with a probability of 0.95/0.99 assuming model assumptions.
+
+
+## Discussion and Conclusion
+Area, Elevation and Soil were found to have a strong relationship with native plant species richness under linearity, i.i.d-ness and additive gaussian noise assumptions and the rest of the covariates were rejected to have a similar linear relationship by using a $t$-test diagnostic at a confidence level $>50%$. We then argued that since the data were spanning multiple orders of magnitudes, a log transform would be appropriate. This was peformed and the final model incorporating the transform showed the strongest diagnostics indicative of measuring the response relationship. We have validated hypotheses 2 and 3 that were set at the start of the study namely that logging and the 3 aforementioned covariates would produce the strongest predictive linear model. Human population was not a significant covariate. From a preliminary version of its factoring, it was found that this didn't provide sufficient improvements over other models discussed in the previous sections and hence incorporating a factored version of this model was ruled out. 
+
+A limitation of the analysis is lack of sufficient data which has demonstrated significant variance for example and the lack of non-parametric modelling that has precluded the possiblity of a better fit being observed. Modelling human population as a factor was not carried out although this can be explored. More data could also be useful to improve and understand the generalizability of the fitted model. More understanding of the natural properties of the data would help motivate the transformation choice. 
